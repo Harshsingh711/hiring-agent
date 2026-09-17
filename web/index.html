@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hiring Agent — Resume rubric</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <div class="page">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <path
+                d="M4 19V5h4l4 6 4-6h4v14h-4V10.5L12 16 8 10.5V19H4Z"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          <div>
+            <p class="brand-name">Hiring Agent</p>
+            <p class="brand-sub">Open intern rubric</p>
+          </div>
+        </div>
+        <p class="top-note">Local scoring. Your PDF stays on this machine.</p>
+      </header>
+
+      <main id="main">
+        <section class="hero">
+          <p class="eyebrow">Resume scorecard</p>
+          <h1>See how this intern rubric would rate your resume.</h1>
+          <p class="lede">
+            Upload a PDF. The pipeline extracts sections, checks a public GitHub
+            profile if one is listed, then returns category scores and specific
+            improvements. This is not a typical ATS.
+          </p>
+        </section>
+
+        <section class="workspace" aria-labelledby="upload-heading">
+          <form id="score-form" class="panel">
+            <h2 id="upload-heading">Score a resume</h2>
+            <label class="field-label" for="role-select">Rubric</label>
+            <select id="role-select" name="role" required></select>
+            <p id="role-help" class="help"></p>
+
+            <label class="field-label" for="file-input">Resume PDF</label>
+            <div id="dropzone" class="dropzone">
+              <input
+                id="file-input"
+                type="file"
+                name="file"
+                accept="application/pdf,.pdf"
+                required
+              />
+              <div class="dropzone-copy">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="none" aria-hidden="true">
+                  <path
+                    d="M12 16V4m0 0 4 4M12 4 8 8M5 20h14"
+                    stroke="currentColor"
+                    stroke-width="1.8"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <p>
+                  <span class="drop-strong">Drop a PDF here</span> or
+                  <span class="drop-link">browse</span>
+                </p>
+                <p id="file-name" class="file-name">PDF only, up to 8 MB</p>
+              </div>
+            </div>
+            <p id="form-error" class="error" role="alert" hidden></p>
+            <button id="submit-btn" class="cta" type="submit">
+              <span>Get my rating</span>
+            </button>
+          </form>
+
+          <aside class="facts">
+            <h2>What happens</h2>
+            <ol>
+              <li>Parse contact, work, projects, and skills from the PDF.</li>
+              <li>If GitHub is on the resume, classify public repos.</li>
+              <li>Score against the selected role’s weights and deductions.</li>
+            </ol>
+            <p class="facts-note">
+              A full run can take several minutes. Cached resumes return faster.
+            </p>
+          </aside>
+        </section>
+
+        <section id="progress-panel" class="panel progress-panel" hidden>
+          <h2>Working</h2>
+          <p id="progress-message">Starting…</p>
+          <div
+            class="progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            id="progress-bar"
+          >
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+        </section>
+
+        <section id="result" class="result" hidden></section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
