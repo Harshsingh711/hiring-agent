@@ -259,17 +259,28 @@ form.addEventListener("submit", async (event) => {
 
   try {
     const response = await fetch("/api/evaluate", { method: "POST", body });
-    const data = await response.json();
+    const contentType = response.headers.get("content-type") || "";
     if (!response.ok) {
-      const detail = data.detail;
-      const message =
-        typeof detail === "string"
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((item) => item.msg || item).join(" ")
-            : "Upload failed.";
+      let message = "Upload failed.";
+      try {
+        const data = await response.json();
+        const detail = data.detail;
+        message =
+          typeof detail === "string"
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((item) => item.msg || item).join(" ")
+              : message;
+      } catch {
+        message = `Upload failed (${response.status}).`;
+      }
       throw new Error(message);
     }
+    if (contentType.includes("text/event-stream") && response.body) {
+      await readScoreStream(response.body);
+      return;
+    }
+    const data = await response.json();
     if (pollTimer) {
       clearInterval(pollTimer);
     }
@@ -287,6 +298,41 @@ form.addEventListener("submit", async (event) => {
     showError(error.message || "Could not start scoring.");
   }
 });
+
+async function readScoreStream(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() || "";
+    for (const chunk of chunks) {
+      const line = chunk
+        .split("\n")
+        .find((entry) => entry.startsWith("data: "));
+      if (!line) {
+        continue;
+      }
+      const event = JSON.parse(line.slice(6));
+      if (event.status === "running") {
+        setProgress(event.percent || 0, event.message || "Working…");
+      } else if (event.status === "done") {
+        submitBtn.disabled = false;
+        progressPanel.hidden = true;
+        renderReport({ result: event.result });
+        return;
+      } else if (event.status === "error") {
+        throw new Error(event.message || "Scoring failed.");
+      }
+    }
+  }
+  throw new Error("Scoring stopped before a report was returned.");
+}
 
 bindDropzone();
 loadRoles().catch((error) => showError(error.message));

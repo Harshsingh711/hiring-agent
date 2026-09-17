@@ -38,7 +38,7 @@ from transform import (
     convert_github_data_to_text,
     convert_blog_data_to_text,
 )
-from config import DEVELOPMENT_MODE
+from config import CACHE_DIR, DEVELOPMENT_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -277,8 +277,8 @@ def find_profile(profiles, network):
 def main(pdf_path, role: Role, progress=None, write_csv: bool = True):
     evaluation_model = build_evaluation_model(role)
     cache_key = _cache_key_for_pdf(pdf_path)
-    cache_filename = f"cache/resumecache_{cache_key}.json"
-    github_cache_filename = f"cache/githubcache_{cache_key}.json"
+    cache_filename = str(CACHE_DIR / f"resumecache_{cache_key}.json")
+    github_cache_filename = str(CACHE_DIR / f"githubcache_{cache_key}.json")
     _emit_progress(progress, "parse", "Reading resume PDF...", 5)
 
     resume_data = None

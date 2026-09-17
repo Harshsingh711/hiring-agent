@@ -12,7 +12,7 @@ from pdf import logger
 from prompts.template_manager import TemplateManager
 from prompt import DEFAULT_MODEL, MODEL_PARAMETERS
 from llm_utils import initialize_llm_provider, extract_json_from_response
-from config import DEVELOPMENT_MODE
+from config import CACHE_DIR, DEVELOPMENT_MODE
 
 
 def _create_cache_filename(api_url: str, params: dict = None) -> str:
@@ -20,9 +20,9 @@ def _create_cache_filename(api_url: str, params: dict = None) -> str:
 
     if params:
         param_str = "_".join([f"{k}_{v}" for k, v in sorted(params.items())])
-        filename = f"cache/gh_githubcache_{url_parts}_{param_str}.json"
+        filename = str(CACHE_DIR / f"gh_githubcache_{url_parts}_{param_str}.json")
     else:
-        filename = f"cache/gh_githubcache_{url_parts}.json"
+        filename = str(CACHE_DIR / f"gh_githubcache_{url_parts}.json")
     return filename
 
 
@@ -103,7 +103,7 @@ def _fetch_github_api(api_url, params=None):
 
     if DEVELOPMENT_MODE and status_code == 200:
         try:
-            os.makedirs("cache", exist_ok=True)
+            os.makedirs(CACHE_DIR, exist_ok=True)
             Path(cache_filename).write_text(
                 json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
             )

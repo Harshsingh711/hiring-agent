@@ -1,32 +1,41 @@
-"""Local website for scoring resumes with the hiring-agent pipeline."""
+"""Website for scoring resumes with the hiring-agent pipeline."""
 
+import json
 import os
+import queue
 import sys
 import threading
 import uuid
 from pathlib import Path
 from typing import Dict
 
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 if sys.platform == "win32":
-    os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from roles import list_available_roles, load_role
 from score import main as score_resume
 
 ROOT = Path(__file__).parent
-UPLOADS = ROOT / "uploads"
 WEB = ROOT / "web"
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
-UPLOADS.mkdir(exist_ok=True)
+
+def _runtime_dir(name: str) -> Path:
+    base = Path("/tmp/hiring-agent") if os.getenv("VERCEL") else ROOT
+    path = base / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+UPLOADS = _runtime_dir("uploads")
 
 app = FastAPI(title="Hiring Agent", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=WEB), name="static")
@@ -44,51 +53,86 @@ def _update_job(job_id: str, **fields):
         job.update(fields)
 
 
-def _run_job(job_id: str, pdf_path: str, role_name: str):
-    def progress(event):
-        _update_job(
-            job_id,
-            status="running",
-            stage=event.get("stage"),
-            message=event.get("message"),
-            percent=int(event.get("percent") or 0),
-        )
+def _run_job(job_id: str, pdf_path: str, role_name: str, progress=None):
+    def on_progress(event):
+        payload = {
+            "status": "running",
+            "stage": event.get("stage"),
+            "message": event.get("message"),
+            "percent": int(event.get("percent") or 0),
+        }
+        _update_job(job_id, **payload)
+        if progress:
+            progress(payload)
 
     try:
         role = load_role(role_name)
         with _run_lock:
             report = score_resume(
-                pdf_path, role, progress=progress, write_csv=False
+                pdf_path, role, progress=on_progress, write_csv=False
             )
         if not report:
-            _update_job(
-                job_id,
-                status="error",
-                message="Could not read this PDF as a resume.",
-                percent=100,
-            )
+            payload = {
+                "status": "error",
+                "message": "Could not read this PDF as a resume.",
+                "percent": 100,
+                "stage": "error",
+            }
+            _update_job(job_id, **payload)
+            if progress:
+                progress(payload)
             return
-        _update_job(
-            job_id,
-            status="done",
-            result=report,
-            percent=100,
-            message="Report ready.",
-            stage="done",
-        )
+        payload = {
+            "status": "done",
+            "result": report,
+            "percent": 100,
+            "message": "Report ready.",
+            "stage": "done",
+        }
+        _update_job(job_id, **payload)
+        if progress:
+            progress(payload)
     except Exception as exc:
-        _update_job(
-            job_id,
-            status="error",
-            message=str(exc),
-            percent=100,
-            stage="error",
-        )
+        payload = {
+            "status": "error",
+            "message": str(exc),
+            "percent": 100,
+            "stage": "error",
+        }
+        _update_job(job_id, **payload)
+        if progress:
+            progress(payload)
     finally:
         try:
             Path(pdf_path).unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def _save_upload(role: str, filename: str, data: bytes) -> tuple[str, str]:
+    if role not in list_available_roles():
+        raise HTTPException(status_code=400, detail=f"Unknown role '{role}'.")
+    if not (filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Upload a PDF resume.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File is over 8 MB.")
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="That file does not look like a PDF.")
+
+    job_id = str(uuid.uuid4())
+    pdf_path = UPLOADS / f"{job_id}.pdf"
+    pdf_path.write_bytes(data)
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "stage": "queued",
+            "message": "Waiting to start...",
+            "percent": 0,
+            "result": None,
+            "filename": filename,
+        }
+    return job_id, str(pdf_path)
 
 
 @app.get("/api/roles")
@@ -111,39 +155,30 @@ def roles():
 
 @app.post("/api/evaluate")
 async def evaluate(role: str = Form(...), file: UploadFile = File(...)):
-    if role not in list_available_roles():
-        raise HTTPException(status_code=400, detail=f"Unknown role '{role}'.")
+    job_id, pdf_path = _save_upload(role, file.filename or "", await file.read())
+    events: queue.Queue = queue.Queue()
 
-    filename = (file.filename or "").lower()
-    if not filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Upload a PDF resume.")
+    def progress(payload):
+        events.put(payload)
 
-    data = await file.read()
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=400, detail="File is over 8 MB.")
-    if not data.startswith(b"%PDF"):
-        raise HTTPException(status_code=400, detail="That file does not look like a PDF.")
+    def worker():
+        _run_job(job_id, pdf_path, role, progress=progress)
+        events.put(None)
 
-    job_id = str(uuid.uuid4())
-    pdf_path = UPLOADS / f"{job_id}.pdf"
-    pdf_path.write_bytes(data)
+    threading.Thread(target=worker, daemon=True).start()
 
-    with _jobs_lock:
-        _jobs[job_id] = {
-            "id": job_id,
-            "status": "queued",
-            "stage": "queued",
-            "message": "Waiting to start...",
-            "percent": 0,
-            "result": None,
-            "filename": file.filename,
-        }
+    def stream():
+        while True:
+            item = events.get()
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
 
-    thread = threading.Thread(
-        target=_run_job, args=(job_id, str(pdf_path), role), daemon=True
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-    thread.start()
-    return {"job_id": job_id}
 
 
 @app.get("/api/jobs/{job_id}")

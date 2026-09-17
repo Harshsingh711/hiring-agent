@@ -26,7 +26,7 @@ Default intern weights:
 
 ## Quick start
 
-Python 3.11+ and a Gemini (or Ollama) model.
+Python 3.12 and a Gemini (or Ollama) model.
 
 ```bash
 git clone https://github.com/Harshsingh711/hiring-agent.git
@@ -51,6 +51,17 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000), choose a rubric, and upload a PDF. A full run can take several minutes. Files stay on your machine.
+
+### Deploy on Vercel
+
+The GitHub repo is connected to Vercel. After you push, set these in the Vercel project **Environment Variables**:
+
+| Name | Example |
+|---|---|
+| `GEMINI_API_KEY` | your Google AI Studio key |
+| `DEFAULT_MODEL` | `gemini-3-flash-preview` |
+
+Then redeploy. Vercel runs Python 3.12. Scoring can take longer than the Hobby function timeout, so a Pro plan (or running locally) is more reliable for full reports.
 
 ### CLI
 

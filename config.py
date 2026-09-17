@@ -13,6 +13,15 @@ DEVELOPMENT_MODE = True
 # Load .env before any os.getenv below, so values apply regardless of import order.
 load_dotenv(Path(__file__).parent / ".env")
 
+if os.getenv("VERCEL"):
+    CACHE_DIR = Path("/tmp/hiring-agent-cache")
+else:
+    CACHE_DIR = Path(__file__).parent / "cache"
+try:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+
 _CONFIG_PATH = Path(__file__).parent / "providers.json"
 
 with open(_CONFIG_PATH) as _f:
